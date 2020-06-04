@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/css/bootstrap.min.css" integrity="sha384-9aIt2nRpC12Uk9gS9baDl411NQApFmC26EwAOH8WgZl5MYYxFfc+NcPb1dKGj7Sk" crossorigin="anonymous">
+</head>
+<body>
+    <section class="container">
+        <div class="row">
+            <div class="col-8 mx-auto" class="form-group">
+                <div class="card mt-5 p-3" style="height: 300px;">
+                    <h1 class="text-center">A test</h1>
+
+                    <form id="form1" enctype="multipart/form-data">
+                        <div class="input-group mb-3">
+                            <div class="input-group-prepend">
+                              <span class="input-group-text" id="inputGroupFileAddon01">Upload</span>
+                            </div>
+                            <div class="custom-file">
+                              <input type="file" class="custom-file-input" id="inputGroupFile01" aria-describedby="inputGroupFileAddon01" multiple>
+                              <label class="custom-file-label" for="inputGroupFile01">Choose file</label>
+                            </div>
+                        </div>
+                        <button class="btn btn-outline-dark btn-block mt-3" type="submit">A perro</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </section>
+</body>
+
+    <!-- 
+    The core Firebase JS SDK is always required and must be listed first 
+    <script src="https://www.gstatic.com/firebasejs/7.14.6/firebase-app.js"></script>
+    -->
+
+<script src="https://www.gstatic.com/firebasejs/6.2.0/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/6.2.0/firebase-functions.js"></script>
+<script>
+  var firebaseConfig = {
+    apiKey: "AIzaSyDk9WOwJL_oBV2x60nj0QFkjV83P51cYWo",
+    authDomain: "proyecto1-61b87.firebaseapp.com",
+    databaseURL: "https://proyecto1-61b87.firebaseio.com",
+    //databaseURL: "http://localhost:4000/",
+    projectId: "proyecto1-61b87",
+    storageBucket: "proyecto1-61b87.appspot.com",
+    messagingSenderId: "1816895127",
+    appId: "1:1816895127:web:dfb602a9b0a27a085593d2"
+  };
+  firebase.initializeApp(firebaseConfig);
+
+/*    
+const perros = firebase.functions().httpsCallable('perros2');
+    perros({message: "hola"}) 
+      .catch((err)=>{console.log(err)})
+      .then((res)=>{console.log(res)})
+
+  */
+
+
+  document.getElementById('form1').addEventListener('submit', function(e){
+    e.preventDefault();
+
+    const info = e.srcElement[0].files[0];
+    const formData = new FormData();
+    const filecounter = e.srcElement[0].files.length;
+    const arraypages = [];
+    const arraycopys = [];
+    for (let i = 0; i < filecounter; i++) {
+      formData.append('files[]', e.srcElement[0].files[i]);
+      arraypages.push(i);
+      arraycopys.push(i+10);
+    }
+    formData.append('fieldpage[]', arraypages);
+    formData.append('fieldqty[]', arraycopys);
+    //formData.append('file', ;
+    //formData.append('file2', e.srcElement[0].files[1]);
+    
+    fetch("http://localhost:5001/proyecto1-61b87/us-central1/uploadFile/"+filecounter,{
+        method: 'POST',
+        body: formData
+        }).catch(err => {console.log(err);})
+        //.then(response => {return response.json()})
+        .then(res => {    
+          console.log(res);                                  
+        });
+    
+    
+  });
+
+</script>
+</html>

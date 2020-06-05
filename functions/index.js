@@ -2,11 +2,11 @@
 
 const admin = require("firebase-admin");
 const functions = require('firebase-functions');
-const util = require('util');
-const stream = require('stream');
 const path = require('path');
 const moment = require('moment');
 const { v4: uuidv4 } = require('uuid'); 
+
+const os = require('os');
 
 const Busboy = require('busboy');
 const cors = require('cors')({  origin: true, });
@@ -19,7 +19,6 @@ admin.initializeApp({
 });
 const firedb = admin.database();
 const bucket = admin.storage().bucket();
-const pipeone = util.promisify(stream.pipeline);
 
 exports.helloWorld = functions.https.onRequest(async (req, res) => {
   return cors(req, res, () => {
@@ -27,9 +26,101 @@ exports.helloWorld = functions.https.onRequest(async (req, res) => {
   });
 });
 
+exports.uploadFile = functions.https.onRequest(async (req, res) => {
+  if (req.method !== 'POST') {
+    return res.status(405).end();
+  }
+
+  let filecounter = 0;
+  if(req.params.hasOwnProperty('0')){
+    if(req.params['0'].length == 2){
+      filecounter = req.params['0'];
+      filecounter = filecounter.slice(1,2);
+      filecounter = Number(filecounter);
+    }
+  }
+
+  let busboy;
+  const bparams = { headers: req.headers, limits: { fileSize: 1000000 ,files: 5  }};
+
+  const clientuuid = uuidv4();
+  const clientkey = (clientuuid.slice(0,8)).toUpperCase();
+  const daynumber = moment().format('DDDD');
+
+  let arraypages;
+  let arraycopys;
+  
+
+  busboy = new Busboy(bparams);
+  await new Promise((resolve, reject)=>{
+    busboy.on('field', (field,val) => {
+      if(field == "fieldpage[]"){
+        arraypages = val.split(',');
+      }
+      if(field == "fieldqty[]"){
+        arraycopys = val.split(',');
+      }
+      if( (arraypages)&&(arraycopys) )
+        resolve("a ok");
+    });
+    busboy.end(req.rawBody);
+  });
+
+  let arraypromise = [];
+  let filesgroup = [];
+  let counter = 0;
+  busboy = new Busboy(bparams);
+  busboy.on('file', (field, file, name, encode, type) => {
+
+    const dest = `${ daynumber }/${ clientuuid }/f${ counter++ }${ path.extname(name) }`;
+    const blob = bucket.file(dest);
+    const blobStream = blob.createWriteStream({resumable: false, public: true, metadata: {contentType: type}});
+    file.pipe(blobStream);
+
+    const promise = new Promise((resolve, reject) => {
+      file.on('end', () => {
+        blobStream.end();
+        if(type == "application/pdf"){
+          let i = blob.name.slice(42,43);
+          filesgroup.push({
+            filenum: i,
+            newname: 'f' + i +  path.extname(name),
+            oldname: name, 
+            publicUrl: `https://storage.googleapis.com/${bucket.name}/${blob.name}`,
+            pages: arraypages[i],
+            copys: arraycopys[i],
+            date: moment().format('LLLL')
+          });
+        }
+      });
+      blobStream.on('finish', resolve);
+      blobStream.on('error', reject);
+    });
+    arraypromise.push(promise);
+
+  });
+
+  busboy.on('finish', async () => {
+    try {
+      await Promise.all(arraypromise);
+      const clientinfo = { clientuuid, clientkey, filesgroup };
+      await firedb.ref(clientkey).set(clientinfo);
+      cors(req, res, () => {  res.status(200).json({status: true, clientkey});  });
+    } catch (error) {
+      console.log(error);
+      cors(req, res, () => {  res.status(200).json({status: false});  });
+    }
+    
+  });
+  busboy.end(req.rawBody);
+});
 
 
+
+/*
 exports.uploadFile = functions.https.onRequest(async(req, res) => {
+
+  //console.log(req);
   let filecounter = 0;
   if(req.params.hasOwnProperty('0')){
     if(req.params['0'].length == 2){
@@ -40,9 +131,9 @@ exports.uploadFile = functions.https.onRequest(async(req, res) => {
   }
 
   if( ( 5>=filecounter )&&( filecounter>0 ) ){
-
     let busboy;
     const bparams = { headers: req.headers, limits: { fileSize: 9990, files: 5  }};
+    const tmpdir = path.join(__dirname, '../public/upload');
     
     const clientuuid = uuidv4();
     const clientkey = (clientuuid.slice(0,8)).toUpperCase();
@@ -55,16 +146,40 @@ exports.uploadFile = functions.https.onRequest(async(req, res) => {
     await new Promise((resolve, reject)=>{
       busboy.on('field', (field,val) => {
         //console.log(`Processed field ${field}: ${val}.`);
-        if(field == "fieldpage[]")
-          arraypages = val;
-        if(field == "fieldqty[]")
-          arraycopys = val;
+        if(field == "fieldpage[]"){
+          arraypages = val.split(',');
+        }
+        if(field == "fieldqty[]"){
+          arraycopys = val.split(',');
+        }
         if( (arraypages)&&(arraycopys) )
           resolve("a ok");
       });
       busboy.end(req.rawBody);
     });
 
+    //let arraydata = [];
+    busboy = new Busboy(bparams);
+    //await new Promise( (resolve, reject)=>{
+      busboy.on('file', async (field, file, name, encode, type) => {
+        const filepath = path.join(tmpdir, name);
+        const writeStream = fse.createWriteStream(filepath);
+        file.pipe(writeStream);
+
+        new Promise((resolve, reject) => {
+          file.on('end', () => {
+            writeStream.end();
+          });
+          writeStream.on('finish', resolve);
+          writeStream.on('error', reject);
+        });
+
+      });
+      busboy.end(req.rawBody);
+    //});
+    //console.log(arraydata);
+
+    
     let fileup = 0;
     let errup = 0;
     let counter = 0;
@@ -72,11 +187,12 @@ exports.uploadFile = functions.https.onRequest(async(req, res) => {
     const res3 = await new Promise((resolve, reject)=>{
   
       busboy.on('file', async (field, file, name, encode, type) => {
-        if(type == "application/pdf"){
-          const destination = `${ daynumber }/${ clientuuid }/f${ counter + path.extname(name) }`;
-          const blob = bucket.file(destination);
+       // if(type == "application/pdf"){
           try {
-            await pipeone(file,blob.createWriteStream({public: true}));
+            const destination = `${ daynumber }/${ clientuuid }/f${ counter }${ path.extname(name) }`;
+            const blob = bucket.file(destination);
+            const writeoptions = { public: true, metadata: { contentType: type }, resumable: false };
+            await pipeone(file,blob.createWriteStream(writeoptions));
 
             filesgroup.push({
               filenum: counter,
@@ -92,9 +208,10 @@ exports.uploadFile = functions.https.onRequest(async(req, res) => {
           } catch (err) {
             errup++;
           }
-        }else{
-          errup++;
-        }
+        //}else{
+        //  errup++;
+        //}
+        counter++;
 
         if( (fileup+errup) >= filecounter ){
           if(errup){
@@ -111,14 +228,17 @@ exports.uploadFile = functions.https.onRequest(async(req, res) => {
             resolve({status: true, message: "aa okkkk"});
           }
         }
-        counter++;
+        
+
+
 
       });
       busboy.end(req.rawBody);
   
     });
-
-    if(res3['status']){
+    
+    
+    if( true ||res3['status']){
       cors(req, res, () => {  res.status(200).send("okkkk");  });
     }else{
       cors(req, res, () => {  res.status(403).send('Forbidden!'); });
@@ -129,6 +249,7 @@ exports.uploadFile = functions.https.onRequest(async(req, res) => {
   }
 
 });
+*/
 
 /*
 exports.uploadFile = functions.https.onRequest((req, res) => {
@@ -199,13 +320,7 @@ exports.uploadFile = functions.https.onRequest((req, res) => {
     const writeStream = fs.createWriteStream(filepath);
     file.pipe(writeStream);
 
-    const promise = new Promise((resolve, reject) => {
-      file.on('end', () => {
-        writeStream.end();
-      });
-      writeStream.on('finish', resolve);
-      writeStream.on('error', reject);
-    });
+    const promise = 
     fileWrites.push(promise);
     
   });
